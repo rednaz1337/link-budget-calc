@@ -1,0 +1,11 @@
+[package]
+name = "link-budget-calculator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.29.1"
+egui = "0.29.1"
+egui_extras = "0.29.1"
+number_prefix = "0.4.0"
+uom = "0.36.0"
