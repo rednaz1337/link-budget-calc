@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use eframe::{App, CreationContext, Frame};
 use egui::CentralPanel;
 use egui::{Context, DragValue, Slider, TextEdit, Ui};
 use egui_extras::{Column, TableBuilder};
 use number_prefix::{NumberPrefix, Prefix};
 use std::error::Error;
+use egui::UiKind::ScrollArea;
 
 mod asynch;
 mod calc;
@@ -24,34 +26,31 @@ enum CalculationTarget {
     Bandwidth,
     #[default]
     Snr,
-    NoiseFigure,
-    TxGain,
-    RxGain,
     Distance,
-    AdditionalLosses,
     TxPower,
-    RxPower,
+    Loss(String),
+    Gain(String),
 }
 
 struct LinkBudgetApp {
     temperature: f64,  // Kelvin
     frequency: f64,    // Hertz
     bandwidth: f64,    // Hertz
-    snr_min: f64,      // dB
-    noise_figure: f64, // dB
+    snr: f64,      // dB
 
     tx_power: f64, // dBm
-    rx_power: f64, // dBm
-    tx_gain: f64,  // dB
-    rx_gain: f64,  // dB
 
     distance: f64, // meter
     d_break: f64,  // meter
     break_exponent: f64,
 
-    additional_losses: Vec<AdditionalLoss>,
+    losses: HashMap<String, f64>,
     loss_name: String,
     loss_db: f64,
+    
+    gains: HashMap<String, f64>,
+    gain_name: String,
+    gain_db: f64,
 
     calculation_target: CalculationTarget,
 }
@@ -61,52 +60,50 @@ impl Default for LinkBudgetApp {
         Self {
             temperature: 290.0,
             bandwidth: 20e6,
-            snr_min: 10.0,
+            snr: 10.0,
             frequency: 2.4e9,
-            noise_figure: 10.0,
-            tx_gain: 5.0,
-            rx_gain: 5.0,
             tx_power: 30.0,
-            rx_power: 1.0,
             distance: 2000.0,
             d_break: 500.0,
             break_exponent: 4.3,
-            additional_losses: Vec::default(),
+            losses: HashMap::default(),
             loss_name: String::default(),
             loss_db: 10.0,
+            gains: HashMap::new(),
+            gain_name: String::new(),
+            gain_db: 10.0,
             calculation_target: CalculationTarget::default(),
         }
     }
 }
-
-struct AdditionalLoss {
-    name: String,
-    loss: f64,
-}
-
 impl LinkBudgetApp {
     pub fn new(cc: &CreationContext) -> Result<Box<dyn App>, Box<dyn Error + Send + Sync>> {
         Ok(Box::new(Self::default()))
     }
 
-    pub fn additional_losses(&self) -> f64 {
-        self.additional_losses.iter().map(|l| l.loss).sum()
+    pub fn total_losses(&self) -> f64 {
+        self.losses.iter().map(|(_, l)| *l).sum()
     }
+    
+    pub fn total_gains(&self) -> f64 {
+        self.gains.iter().map(|(_, g)| *g).sum()
+    }
+    
+    
 
     pub fn total_sum(&self) -> f64 {
         let thermal =
             calc::watt_to_dbm(calc::thermal_noise_power(self.temperature, self.bandwidth));
-        let additional = self.additional_losses();
+        let losses = self.total_losses();
+        let gains = self.total_gains();
         let path = calc::friis::path_loss(self.distance, self.d_break, self.frequency, self.break_exponent);
 
         let negative =
              thermal
-            + additional
+            + losses
             + path
-            + self.snr_min
-            + self.noise_figure
-            + self.rx_power;
-        let positive = self.tx_gain + self.tx_power + self.rx_gain;
+            + self.snr;
+        let positive = self.tx_power + gains;
 
         return positive - negative;
     }
@@ -116,103 +113,142 @@ impl eframe::App for LinkBudgetApp {
     fn update(&mut self, ctx: &Context, frame: &mut Frame) {
         let total_db = self.total_sum();
         CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Link Budget Calculator");
-            frame_styled(ui).show(ui, |ui| {
-                ui.heading("Base Info");
-                egui::Grid::new("base_data").num_columns(2).show(ui, |ui| {
-                    ui.selectable_value(
-                        &mut self.calculation_target,
-                        CalculationTarget::Temperature,
-                        "Temperature",
-                    );
-                    ui.add(DragValue::new(&mut self.temperature).suffix(" K"));
-                    ui.end_row();
+            ui.horizontal(|ui| {
+                frame_styled(ui).show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.heading("Base Info");
+                        egui::Grid::new("base_data").num_columns(2).show(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.calculation_target,
+                                CalculationTarget::Temperature,
+                                "Temperature",
+                            );
+                            ui.add(DragValue::new(&mut self.temperature).suffix(" K"));
+                            ui.end_row();
 
-                    ui.label("Frequency");
-                    ui.add(
-                        prefix_drag_value(&mut self.frequency)
-                            .suffix("Hz")
-                            .range(0.0..=f64::MAX)
-                            .speed(1e6),
-                    );
-                    ui.end_row();
+                            ui.label("Frequency");
+                            ui.add(
+                                prefix_drag_value(&mut self.frequency)
+                                    .suffix("Hz")
+                                    .range(0.0..=f64::MAX)
+                                    .speed(1e6),
+                            );
+                            ui.end_row();
 
-                    ui.selectable_value(
-                        &mut self.calculation_target,
-                        CalculationTarget::Bandwidth,
-                        "Bandwidth",
-                    );
-                    ui.add(
-                        prefix_drag_value(&mut self.bandwidth)
-                            .suffix("Hz")
-                            .range(0.0..=f64::MAX)
-                            .speed(1e6),
-                    );
-                    ui.end_row();
+                            ui.selectable_value(
+                                &mut self.calculation_target,
+                                CalculationTarget::Bandwidth,
+                                "Bandwidth",
+                            );
+                            ui.add(
+                                prefix_drag_value(&mut self.bandwidth)
+                                    .suffix("Hz")
+                                    .range(0.0..=f64::MAX)
+                                    .speed(1e6),
+                            );
+                            ui.end_row();
 
-                    ui.selectable_value(
-                        &mut self.calculation_target,
-                        CalculationTarget::Snr,
-                        "Min. SNR",
-                    );
-                    ui.add(DragValue::new(&mut self.snr_min).suffix(" dB"));
-                    ui.end_row();
+                            ui.selectable_value(
+                                &mut self.calculation_target,
+                                CalculationTarget::Snr,
+                                "SNR",
+                            );
+                            ui.add(DragValue::new(&mut self.snr).suffix(" dB"));
+                            ui.end_row();
 
-                    ui.selectable_value(
-                        &mut self.calculation_target,
-                        CalculationTarget::TxPower,
-                        "Tx Power",
-                    );
-                    ui.add(DragValue::new(&mut self.tx_power).suffix(" dBm"));
-                    ui.end_row();
+                            ui.selectable_value(
+                                &mut self.calculation_target,
+                                CalculationTarget::TxPower,
+                                "Tx Power",
+                            );
+                            ui.add(DragValue::new(&mut self.tx_power).suffix(" dBm"));
+                            ui.end_row();
+                        })
+                        
+                    });
+                });
+                frame_styled(&ui).show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.heading("Free Space Path loss");
+                        egui::Grid::new("path_loss").show(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.calculation_target,
+                                CalculationTarget::Distance,
+                                "Distance",
+                            );
+                            ui.add(DragValue::new(&mut self.distance).suffix(" m"));
+                            ui.end_row();
 
-                    ui.selectable_value(
-                        &mut self.calculation_target,
-                        CalculationTarget::RxPower,
-                        "Rx Power (sensitivity)",
-                    );
-                    ui.add(DragValue::new(&mut self.rx_power).suffix(" dBm"));
-                    ui.end_row();
+                            ui.label("break distance");
+                            ui.add(DragValue::new(&mut self.d_break).suffix(" m"));
+                            ui.end_row();
 
-                    ui.selectable_value(
-                        &mut self.calculation_target,
-                        CalculationTarget::NoiseFigure,
-                        "Noise Figure",
-                    );
-                    ui.add(DragValue::new(&mut self.noise_figure).suffix(" dB"));
-                    ui.end_row();
-
-                    ui.selectable_value(
-                        &mut self.calculation_target,
-                        CalculationTarget::TxGain,
-                        "Tx Gain",
-                    );
-                    ui.add(DragValue::new(&mut self.tx_gain).suffix(" dB"));
-                    ui.end_row();
-
-                    ui.selectable_value(
-                        &mut self.calculation_target,
-                        CalculationTarget::RxGain,
-                        "Rx Gain",
-                    );
-                    ui.add(DragValue::new(&mut self.rx_gain).suffix(" dB"));
-                    ui.end_row();
-
-                    ui.selectable_value(
-                        &mut self.calculation_target,
-                        CalculationTarget::AdditionalLosses,
-                        "AdditionalLosses",
-                    );
-                    let loss_sum = self.additional_losses.iter().map(|l| l.loss).sum::<f64>();
-                    ui.label(format!("{:.2} dB", loss_sum));
-                    ui.end_row();
-                })
+                            ui.label("break exponent");
+                            ui.add(DragValue::new(&mut self.break_exponent));
+                            ui.end_row();
+                        });
+                        
+                    });
+                });
+                
             });
             frame_styled(ui).show(ui, |ui| {
-                if matches!(self.calculation_target, CalculationTarget::AdditionalLosses) {
-                    ui.disable();
-                }
-                ui.heading("Additional Losses");
+                ui.heading("Gains");
+                ui.horizontal(|ui| {
+                    ui.label("Add gain: ");
+                    let name_response =
+                        ui.add(TextEdit::singleline(&mut self.gain_name).hint_text("Gain Name"));
+                    ui.add(DragValue::new(&mut self.gain_db).suffix(" dB"));
+                    if ui.button("Add").clicked()
+                        || (name_response.lost_focus()
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                    {
+                        if !self.gain_name.trim().is_empty() {
+                            self.gains.insert(self.gain_name.clone(), self.loss_db);
+                            self.gain_name.clear();
+                        }
+                    }
+                });
+                ui.separator();
+                TableBuilder::new(ui)
+                    .id_salt("gain_table")
+                    .striped(true)
+                    .column(Column::exact(20.0))
+                    .column(Column::remainder())
+                    .column(Column::exact(100.0))
+                    .header(20., |mut header| {
+                        header.col(|ui| {
+                            ui.label(" ");
+                        });
+                        header.col(|ui| {
+                            ui.heading("Gain Name");
+                        });
+                        header.col(|ui| {
+                            ui.heading("Value");
+                        });
+                    })
+                    .body(|mut body| {
+                        self.gains.retain(|name, gain| {
+                            let mut retain = true;
+                            body.row(20.0, |mut row| {
+                                row.col(|ui| {
+                                    if ui.button("X").clicked() {
+                                        retain = false;
+                                    }
+                                });
+                                row.col(|ui| {
+                                    ui.label(name.as_str());
+                                });
+                                row.col(|ui| {
+                                    ui.add(DragValue::new(gain).suffix(" dB"));
+                                });
+                            });
+                            retain
+                        });
+                    });
+            });
+            frame_styled(ui).show(ui, |ui| {
+                ui.heading("Losses");
                 ui.horizontal(|ui| {
                     ui.label("Add loss: ");
                     let name_response =
@@ -223,18 +259,14 @@ impl eframe::App for LinkBudgetApp {
                             && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                     {
                         if !self.loss_name.trim().is_empty() {
-                            self.additional_losses.push(AdditionalLoss {
-                                name: self.loss_name.clone(),
-                                loss: self.loss_db,
-                            });
+                            self.losses.insert(self.loss_name.clone(), self.loss_db);
                             self.loss_name.clear();
-                            self.loss_db = 0.0;
                         }
                     }
                 });
                 ui.separator();
-                let mut delete_loss: Option<usize> = None;
                 TableBuilder::new(ui)
+                    .id_salt("loss_table")
                     .striped(true)
                     .column(Column::exact(20.0))
                     .column(Column::remainder())
@@ -251,45 +283,24 @@ impl eframe::App for LinkBudgetApp {
                         });
                     })
                     .body(|mut body| {
-                        for (index, loss) in self.additional_losses.iter_mut().enumerate() {
+                        self.losses.retain(|name, loss| {
+                            let mut retain = true;
                             body.row(20.0, |mut row| {
                                 row.col(|ui| {
                                     if ui.button("X").clicked() {
-                                        delete_loss = Some(index);
+                                        retain = false;
                                     }
                                 });
                                 row.col(|ui| {
-                                    ui.label(loss.name.as_str());
+                                    ui.label(name.as_str());
                                 });
                                 row.col(|ui| {
-                                    ui.add(DragValue::new(&mut loss.loss).suffix(" dB"));
+                                    ui.add(DragValue::new(loss).suffix(" dB"));
                                 });
-                            })
-                        }
+                            });
+                            retain
+                        });
                     });
-                if let Some(index) = delete_loss {
-                    self.additional_losses.remove(index);
-                }
-            });
-            frame_styled(&ui).show(ui, |ui| {
-                ui.heading("Free Space Path loss");
-                egui::Grid::new("path_loss").show(ui, |ui| {
-                    ui.selectable_value(
-                        &mut self.calculation_target,
-                        CalculationTarget::Distance,
-                        "Distance",
-                    );
-                    ui.add(DragValue::new(&mut self.distance).suffix(" m"));
-                    ui.end_row();
-
-                    ui.label("break distance");
-                    ui.add(DragValue::new(&mut self.d_break).suffix(" m"));
-                    ui.end_row();
-
-                    ui.label("break exponent");
-                    ui.add(DragValue::new(&mut self.break_exponent));
-                    ui.end_row();
-                });
             });
         });
 
@@ -297,15 +308,12 @@ impl eframe::App for LinkBudgetApp {
             CalculationTarget::Temperature => {}
             CalculationTarget::Bandwidth => {}
             CalculationTarget::Snr => {
-                self.snr_min += total_db;
+                self.snr += total_db;
             }
-            CalculationTarget::NoiseFigure => {}
-            CalculationTarget::TxGain => {}
-            CalculationTarget::RxGain => {}
             CalculationTarget::Distance => {}
-            CalculationTarget::AdditionalLosses => {}
             CalculationTarget::TxPower => {}
-            CalculationTarget::RxPower => {}
+            CalculationTarget::Loss(_) => {}
+            CalculationTarget::Gain(_) => {}
         }
     }
 }
