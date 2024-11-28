@@ -8,5 +8,4 @@ eframe = { version = "0.29.1", features = [] }
 egui = "0.29.1"
 egui_extras = "0.29.1"
 number_prefix = "0.4.0"
-uom = "0.36.0"
 mundy = { version = "0.1.2", features = ["epaint"] }
