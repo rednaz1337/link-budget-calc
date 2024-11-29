@@ -42,4 +42,21 @@ pub mod friis {
 
         return path_loss;
     }
+
+    pub fn distance(path_loss: f64, d_break: f64, frequency: f64, break_exponent: f64) -> f64 {
+        let one_meter_one_ghz = 32.0; // dB
+        let freq_loss = 20.0 * f64::log10(frequency / 1e9);
+        let path_loss = path_loss - one_meter_one_ghz - freq_loss;
+        let loss_at_break = 20.0 * f64::log10(d_break / 1.0);
+
+        dbg!(loss_at_break);
+        dbg!(path_loss);
+
+        let distance = if path_loss <= loss_at_break {
+            10f64.powf(path_loss / 20.0)
+        } else {
+            10f64.powf((path_loss - loss_at_break) / break_exponent / 10.0) * d_break
+        };
+        return distance;
+    }
 }
