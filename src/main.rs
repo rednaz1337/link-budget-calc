@@ -5,7 +5,7 @@ mod app;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
-    let viewport_builder = ViewportBuilder::default().with_inner_size(Vec2::new(420.0, 600.0));
+    let viewport_builder = ViewportBuilder::default().with_inner_size(Vec2::new(500.0, 600.0));
     let native_options = eframe::NativeOptions {
         viewport: viewport_builder,
         ..eframe::NativeOptions::default()

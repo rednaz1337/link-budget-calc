@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eframe = { path = "../egui/crates/eframe", features = [
+eframe = { path = "egui/crates/eframe", features = [
     "accesskit",     # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
     "persistence",   # Enable restoring app state when restarting the app.
 ] }
-egui = {path = "../egui/crates/egui", features = [
+egui = {path = "egui/crates/egui", features = [
 ]}
-egui_extras = {path = "../egui/crates/egui_extras"}
+egui_extras = {path = "egui/crates/egui_extras"}
 number_prefix = "0.4.0"
 mundy = { version = "0.1.2" }
 log = "0.4.22"

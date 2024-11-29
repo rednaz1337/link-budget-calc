@@ -27,6 +27,14 @@ pub fn dbm_to_milliwat(dbm: f64) -> f64 {
 pub fn dbm_to_watt(dbm: f64) -> f64 {
     f64::powf(10.0, dbm / 10.) / 1000.0
 }
+
+pub fn dbm_to_dbw(dbm: f64) -> f64 {
+    dbm - 30.0
+}
+
+pub fn dbw_to_dbm(dbw: f64) -> f64 {
+    dbw + 30.0
+}
 pub mod friis {
     
     
