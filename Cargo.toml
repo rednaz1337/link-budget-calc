@@ -17,3 +17,7 @@ log = "0.4.22"
 wasm-bindgen-futures = "0.4.45"
 web-sys = "0.3.72"
 serde = { version = "1.0.214", features = ["derive"] }
+
+[profile.release]
+strip = true
+lto = true
