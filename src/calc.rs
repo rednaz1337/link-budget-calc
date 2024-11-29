@@ -49,9 +49,6 @@ pub mod friis {
         let path_loss = path_loss - one_meter_one_ghz - freq_loss;
         let loss_at_break = 20.0 * f64::log10(d_break / 1.0);
 
-        dbg!(loss_at_break);
-        dbg!(path_loss);
-
         let distance = if path_loss <= loss_at_break {
             10f64.powf(path_loss / 20.0)
         } else {
