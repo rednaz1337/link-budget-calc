@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::error::Error;
-use eframe::{App, CreationContext, Frame};
-use egui::{CentralPanel, Context, DragValue, TextEdit, Ui};
+use eframe::{App, CreationContext, Frame, Storage};
+use egui::{CentralPanel, Context, DragValue, TextEdit, ThemePreference, Ui};
 use egui_extras::{Column, TableBuilder};
 use number_prefix::{NumberPrefix, Prefix};
+use serde::{Deserialize, Serialize};
 use crate::calc;
 
-#[derive(Default, PartialEq, Eq)]
+#[derive(Default, PartialEq, Eq, Serialize, Deserialize)]
 enum CalculationTarget {
     #[default]
     Snr,
@@ -14,6 +15,7 @@ enum CalculationTarget {
     TxPower,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct LinkBudgetApp {
     temperature: f64,  // Kelvin
     frequency: f64,    // Hertz
@@ -28,11 +30,9 @@ pub struct LinkBudgetApp {
 
     losses: HashMap<String, f64>,
     loss_name: String,
-    loss_db: f64,
 
     gains: HashMap<String, f64>,
     gain_name: String,
-    gain_db: f64,
 
     calculation_target: CalculationTarget,
 }
@@ -50,16 +50,17 @@ impl Default for LinkBudgetApp {
             break_exponent: 4.3,
             losses: HashMap::default(),
             loss_name: String::default(),
-            loss_db: 10.0,
             gains: HashMap::new(),
             gain_name: String::new(),
-            gain_db: 10.0,
             calculation_target: CalculationTarget::default(),
         }
     }
 }
 impl LinkBudgetApp {
     pub fn new(cc: &CreationContext) -> Result<Box<dyn App>, Box<dyn Error + Send + Sync>> {
+        if let Some(storage) = cc.storage {
+            return Ok(Box::new(eframe::get_value::<LinkBudgetApp>(storage, eframe::APP_KEY).unwrap_or_default()));
+        }
         Ok(Box::new(Self::default()))
     }
 
@@ -178,35 +179,46 @@ impl LinkBudgetApp {
 }
 
 impl eframe::App for LinkBudgetApp {
+    fn save(&mut self, storage: &mut dyn Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, self);
+    }
     fn update(&mut self, ctx: &Context, frame: &mut Frame) {
         let total_db = self.total_sum();
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                if ui.button("Reset").clicked() {
+                    *self = Self::default();
+                }
+                ui.separator();
+                egui::widgets::global_theme_preference_buttons(ui);
+            });
+        });
         CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 self.ui_base_info(ui);
                 self.ui_path_loss(ui);
             });
-            frame_styled(ui).show(ui, |ui| {
+            frame_styled(ui)
+                .show(ui, |ui| {
                 ui.heading("Gains");
                 ui.horizontal(|ui| {
                     let name_response =
                         ui.add(TextEdit::singleline(&mut self.gain_name).hint_text("Gain Name"));
-                    ui.add(DragValue::new(&mut self.gain_db).suffix(" dB"));
                     if ui.button("Add").clicked()
                         || (name_response.lost_focus()
                         && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                     {
                         if !self.gain_name.trim().is_empty() {
-                            self.gains.insert(self.gain_name.clone(), self.gain_db);
+                            self.gains.insert(self.gain_name.clone(), 10.0);
                             self.gain_name.clear();
                         }
                     }
                 });
-                ui.separator();
                 TableBuilder::new(ui)
                     .id_salt("gain_table")
                     .striped(true)
                     .column(Column::exact(20.0))
-                    .column(Column::remainder())
+                    .column(Column::exact(250.0))
                     .column(Column::exact(100.0))
                     .header(20., |mut header| {
                         header.col(|ui| {
@@ -244,23 +256,21 @@ impl eframe::App for LinkBudgetApp {
                 ui.horizontal(|ui| {
                     let name_response =
                         ui.add(TextEdit::singleline(&mut self.loss_name).hint_text("Loss Name"));
-                    ui.add(DragValue::new(&mut self.loss_db).suffix(" dB"));
                     if ui.button("Add").clicked()
                         || (name_response.lost_focus()
                         && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                     {
                         if !self.loss_name.trim().is_empty() {
-                            self.losses.insert(self.loss_name.clone(), self.loss_db);
+                            self.losses.insert(self.loss_name.clone(), 10.0);
                             self.loss_name.clear();
                         }
                     }
                 });
-                ui.separator();
                 TableBuilder::new(ui)
                     .id_salt("loss_table")
                     .striped(true)
                     .column(Column::exact(20.0))
-                    .column(Column::remainder())
+                    .column(Column::exact(250.0))
                     .column(Column::exact(100.0))
                     .header(20., |mut header| {
                         header.col(|ui| {
