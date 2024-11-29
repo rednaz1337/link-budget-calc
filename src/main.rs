@@ -1,7 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
-use eframe::{App};
 use egui::{Vec2, ViewportBuilder};
-use std::error::Error;
 mod calc;
 mod app;
 
